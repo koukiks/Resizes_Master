@@ -1,3 +1,5 @@
+import React from 'react';
+
 export interface SelectionArea {
   x: number;
   y: number;
@@ -12,56 +14,80 @@ export interface ResizeFormat {
   height: number;
   focus: 'center' | 'left';
   description: string;
-  mode: 'crop' | 'fill';
+  mode: 'crop';
   mirror?: boolean;
   customOffset?: { x: number; y: number };
   customScale?: number;
+  overlay?: {
+    type: 'custom';
+    style: React.CSSProperties;
+  };
 }
 
 export const RESIZE_FORMATS: ResizeFormat[] = [
   {
     id: 'banner',
-    name: 'Bannière large',
+    name: 'Wide Banner',
     width: 1920,
     height: 480,
     focus: 'center',
-    description: 'Format panoramique pour les en-têtes de site.',
+    description: 'Panoramic format for website headers.',
     mode: 'crop',
   },
   {
     id: 'focus-center',
-    name: 'Focus Centre',
+    name: 'Focus Center',
     width: 1600,
     height: 707,
     focus: 'center',
-    description: 'Format large avec mise au point sur le milieu.',
+    description: 'Wide format with focus on the middle.',
     mode: 'crop',
   },
   {
     id: 'focus-left',
-    name: 'Focus Gauche',
+    name: 'Focus Left',
     width: 1600,
     height: 707,
     focus: 'left',
-    description: 'Format large avec mise au point sur le bord gauche.',
+    description: 'Wide format with focus on the left edge.',
     mode: 'crop',
+    overlay: {
+      type: 'custom',
+      style: {
+        top: '10%',
+        bottom: '10%',
+        right: '10%',
+        width: '35%',
+        backgroundColor: 'rgba(239, 68, 68, 0.3)'
+      }
+    }
   },
   {
     id: 'square',
-    name: 'Carré',
+    name: 'Square',
     width: 400,
     height: 400,
     focus: 'center',
-    description: 'Format carré idéal pour les réseaux sociaux ou vignettes.',
+    description: 'Square format ideal for social media or thumbnails.',
     mode: 'crop',
   },
   {
     id: 'standard',
-    name: 'Format Standard',
+    name: 'Standard Format',
     width: 620,
     height: 436,
     focus: 'center',
-    description: 'Format classique pour les articles ou fiches produits.',
+    description: 'Classic format for articles or product sheets.',
     mode: 'crop',
+    overlay: {
+      type: 'custom',
+      style: {
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 'calc(66% - 40px)',
+        backgroundColor: 'rgba(239, 68, 68, 0.3)'
+      }
+    }
   },
 ];

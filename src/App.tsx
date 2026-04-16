@@ -18,14 +18,13 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { RESIZE_FORMATS, ResizeFormat, SelectionArea } from './types';
 import { resizeImage } from './utils/imageProcessing';
-// import { performAiFill } from './services/aiService'; // Removed
 
 export default function App() {
   const [masterImage, setMasterImage] = useState<string | null>(null);
   const [originalFile, setOriginalFile] = useState<File | null>(null);
+  const [customBaseName, setCustomBaseName] = useState<string>('');
   const [resizedImages, setResizedImages] = useState<Record<string, string>>({});
   const [isProcessing, setIsProcessing] = useState(false);
-  // const [aiProcessing, setAiProcessing] = useState<Record<string, boolean>>({}); // Removed
   const [selectionArea, setSelectionArea] = useState<SelectionArea>({ x: 0.4, y: 0.4, width: 0.2, height: 0.2 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
@@ -50,6 +49,7 @@ export default function App() {
 
   const processFile = (file: File) => {
     setOriginalFile(file);
+    setCustomBaseName(file.name.split('.')[0]);
     const reader = new FileReader();
     reader.onload = (e) => {
       const result = e.target?.result as string;
@@ -89,24 +89,6 @@ export default function App() {
     
     setResizedImages(results);
     if (!singleFormatId) setIsProcessing(false);
-  };
-
-  const toggleMode = (formatId: string) => {
-    const format = formats.find(f => f.id === formatId);
-    if (!format) return;
-
-    let nextMode: 'crop' | 'fill' = 'crop';
-    if (format.mode === 'crop') nextMode = 'fill';
-    else nextMode = 'crop';
-
-    const newFormats = formats.map(f => 
-      f.id === formatId ? { ...f, mode: nextMode } : f
-    );
-    setFormats(newFormats);
-    
-    if (masterImage) {
-      generateResizedVersions(masterImage, selectionArea, newFormats);
-    }
   };
 
   const toggleMirror = (formatId: string) => {
@@ -345,8 +327,10 @@ export default function App() {
       if (format && typeof dataUrl === 'string') {
         const link = document.createElement('a');
         link.href = dataUrl;
-        const fileName = originalFile ? originalFile.name.split('.')[0] : 'image';
-        link.download = `${format.width}x${format.height}_${fileName}.jpg`;
+        const baseName = (customBaseName || (originalFile ? originalFile.name.split('.')[0] : 'image')).replace(/\s+/g, '');
+        const formatStr = `${format.width}x${format.height}`;
+        const suffix = format.focus === 'left' ? '_left' : '';
+        link.download = `${formatStr}_${baseName}${suffix}.jpg`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -381,7 +365,7 @@ export default function App() {
               className="bento-btn-outline flex items-center gap-2"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Changer
+              Change
             </button>
           )}
           <button 
@@ -391,12 +375,12 @@ export default function App() {
             {masterImage ? (
               <>
                 <Download className="w-3.5 h-3.5" />
-                Tout Exporter
+                Export All
               </>
             ) : (
               <>
                 <Upload className="w-3.5 h-3.5" />
-                Importer Master
+                Import Master
               </>
             )}
           </button>
@@ -419,9 +403,9 @@ export default function App() {
               <div className="w-16 h-16 bg-bento-accent/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-500">
                 <Upload className="w-6 h-6 text-bento-accent" />
               </div>
-              <h2 className="text-xl font-bold mb-2">Déposez votre image Master</h2>
+              <h2 className="text-xl font-bold mb-2">Drop your Master image</h2>
               <p className="text-bento-dim text-sm text-center max-w-xs">
-                Format haute résolution recommandé pour des déclinaisons optimales.
+                High resolution format recommended for optimal variations.
               </p>
             </div>
           </motion.div>
@@ -429,9 +413,18 @@ export default function App() {
           <div className="bento-grid-container">
             {/* Master View Section */}
             <section className="bento-card" style={{ gridArea: '1 / 1 / 11 / 8' }}>
-              <div className="bento-card-header">
-                <span className="bento-card-title">Source : {originalFile?.name}</span>
-                <span className="bento-badge">Tracez un carré pour définir la zone importante</span>
+              <div className="bento-card-header flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase tracking-widest text-bento-dim font-bold">Source :</span>
+                  <input 
+                    type="text" 
+                    value={customBaseName}
+                    onChange={(e) => setCustomBaseName(e.target.value)}
+                    className="bg-transparent border-b border-bento-border focus:border-bento-accent outline-none text-xs font-bold py-0.5 px-1 min-w-[200px]"
+                    placeholder="Enter image name..."
+                  />
+                </div>
+                <span className="bento-badge">Draw a square to define the important area</span>
               </div>
               <div 
                 ref={masterContainerRef}
@@ -463,6 +456,14 @@ export default function App() {
                         <div className="absolute top-2 left-2 bg-white text-black text-[8px] font-bold px-1 rounded uppercase">
                           {hoveredFormat.name}
                         </div>
+                        
+                        {/* Master View Overlay */}
+                        {hoveredFormat.overlay && (
+                          <div 
+                            className="absolute pointer-events-none"
+                            style={hoveredFormat.overlay.style}
+                          />
+                        )}
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -497,7 +498,7 @@ export default function App() {
             {/* Formats Listing Section */}
             <section className="bento-card" style={{ gridArea: '1 / 8 / 11 / 13' }}>
               <div className="bento-card-header">
-                <span className="bento-card-title">Déclinaisons Web</span>
+                <span className="bento-card-title">Web Variations</span>
               </div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin scrollbar-thumb-bento-border"
                      onMouseMove={handlePreviewMouseMove}
@@ -520,7 +521,16 @@ export default function App() {
                       ) : (
                         <div className="w-full h-2 bg-bento-accent/20" />
                       )}
-                      <div className="absolute inset-0 bg-bento-accent/20 opacity-0 group-hover/preview:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
+                      
+                      {/* Format Overlay */}
+                      {format.overlay && (
+                        <div 
+                          className="absolute pointer-events-none z-10"
+                          style={format.overlay.style}
+                        />
+                      )}
+
+                      <div className="absolute inset-0 bg-bento-accent/20 opacity-0 group-hover/preview:opacity-100 flex items-center justify-center transition-opacity pointer-events-none z-20">
                         <Move className="w-4 h-4 text-white" />
                       </div>
                     </div>
@@ -529,52 +539,38 @@ export default function App() {
                       <div className="flex items-center justify-between gap-2 mt-1">
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] font-mono text-bento-dim">{format.width}x{format.height}</span>
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleMode(format.id);
-                            }}
-                            className={`text-[8px] px-2 py-1 rounded-full border transition-all flex items-center gap-1.5 font-bold ${
-                              format.mode === 'fill' 
-                                  ? 'bg-bento-accent/20 border-bento-accent text-bento-accent' 
-                                  : 'border-bento-border text-bento-dim hover:border-bento-accent'
-                            }`}
-                          >
-                            {format.mode === 'fill' ? (
-                              'Remplissage Flou'
-                            ) : (
-                              'Recadrer'
-                            )}
-                          </button>
+                          <div className="text-[8px] px-2 py-1 rounded-full border border-bento-border text-bento-dim font-bold">
+                            Crop
+                          </div>
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
                               toggleMirror(format.id);
                             }}
-                            className={`p-1 rounded-md border transition-all ${
+                            className={`p-1.5 rounded-md border transition-all ${
                               format.mirror 
                                 ? 'bg-bento-accent/20 border-bento-accent text-bento-accent' 
                                 : 'border-bento-border text-bento-dim hover:border-bento-accent'
                             }`}
-                            title="Effet Miroir Horizontal"
+                            title="Horizontal Mirror Effect"
                           >
-                            <FlipHorizontal className="w-3 h-3" />
+                            <FlipHorizontal className="w-4 h-4" />
                           </button>
                         </div>
                         
-                        <div className="flex items-center gap-1 bg-bento-card border border-bento-border rounded-md p-0.5">
+                        <div className="flex items-center gap-1 bg-bento-card border border-bento-border rounded-md p-1">
                           <button 
                             onClick={(e) => { e.stopPropagation(); handleZoom(format.id, -0.1); }}
-                            className="w-5 h-5 flex items-center justify-center hover:bg-white/10 rounded text-bento-dim hover:text-white transition-colors text-[10px] font-bold"
+                            className="w-7 h-7 flex items-center justify-center hover:bg-white/10 rounded text-bento-dim hover:text-white transition-colors text-sm font-bold"
                           >
                             -
                           </button>
-                          <span className="text-[8px] font-mono w-6 text-center text-bento-dim">
+                          <span className="text-[10px] font-mono w-8 text-center text-bento-dim">
                             {Math.round((format.customScale || getInitialAdjustmentValues(format).scale) * 100)}%
                           </span>
                           <button 
                             onClick={(e) => { e.stopPropagation(); handleZoom(format.id, 0.1); }}
-                            className="w-5 h-5 flex items-center justify-center hover:bg-white/10 rounded text-bento-dim hover:text-white transition-colors text-[10px] font-bold"
+                            className="w-7 h-7 flex items-center justify-center hover:bg-white/10 rounded text-bento-dim hover:text-white transition-colors text-sm font-bold"
                           >
                             +
                           </button>
@@ -583,11 +579,11 @@ export default function App() {
                     </div>
                     <a 
                       href={resizedImages[format.id]} 
-                      download={`${format.width}x${format.height}_${originalFile ? originalFile.name.split('.')[0] : 'image'}.jpg`}
+                      download={`${format.width}x${format.height}_${(customBaseName || (originalFile ? originalFile.name.split('.')[0] : 'image')).replace(/\s+/g, '')}${format.focus === 'left' ? '_left' : ''}.jpg`}
                       className="p-1.5 rounded-md hover:bg-bento-accent/10 text-bento-dim hover:text-bento-accent transition-all opacity-0 group-hover:opacity-100 flex items-center gap-2 text-[10px] font-bold"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      Télécharger
+                      Download
                     </a>
                   </div>
                 ))}
@@ -598,7 +594,7 @@ export default function App() {
                   className="bento-btn-outline w-full flex items-center justify-center gap-2"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  Exporter Tout
+                  Export All
                 </button>
               </div>
             </section>

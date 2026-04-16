@@ -42,33 +42,8 @@ export const resizeImage = (
     let sourceWidth = imgWidth;
     let sourceHeight = imgHeight;
 
-    if (format.mode === 'fill') {
-      // 1. Draw blurred background (Cover)
-      ctx.save();
-      // Draw background scaled to cover the whole canvas
-      const bgScale = Math.max(format.width / imgWidth, format.height / imgHeight);
-      const bgW = imgWidth * bgScale;
-      const bgH = imgHeight * bgScale;
-      const bgX = (format.width - bgW) / 2;
-      const bgY = (format.height - bgH) / 2;
-      
-      ctx.filter = 'blur(30px) brightness(0.6) saturate(1.2)';
-      ctx.drawImage(image, bgX - 50, bgY - 50, bgW + 100, bgH + 100);
-      ctx.restore();
-
-      // 2. Draw main image (Contain)
-      const scale = Math.min(format.width / imgWidth, format.height / imgHeight);
-      const drawW = imgWidth * scale;
-      const drawH = imgHeight * scale;
-      const drawX = (format.width - drawW) / 2;
-      const drawY = (format.height - drawH) / 2;
-      
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(image, drawX, drawY, drawW, drawH);
-    } else {
-      if (format.customOffset && format.customScale !== undefined && format.customScale > 0) {
-        // Manual Override
+    if (format.customOffset && format.customScale !== undefined && format.customScale > 0) {
+      // Manual Override
         // In the modal, scale is imageWidth / containerWidth
         // So sourceWidth = imgWidth / scale
         sourceWidth = imgWidth / format.customScale;
@@ -137,77 +112,7 @@ export const resizeImage = (
         format.width,
         format.height
       );
-    }
 
     resolve(canvas.toDataURL('image/jpeg', 0.9));
   });
-};
-
-export const generatePythonScript = (originalFileName: string): string => {
-  return `import os
-from PIL import Image
-
-def resize_master(input_path, output_folder="outputs"):
-    """
-    Redimensionne une image Master en plusieurs formats web spécifiques.
-    Utilise la méthode 'Crop and Fill' pour éviter les déformations.
-    """
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-
-    # Définition des formats
-    formats = [
-        {"name": "1920x480_Banniere", "size": (1920, 480), "focus": "center"},
-        {"name": "1600x707_Focus_Centre", "size": (1600, 707), "focus": "center"},
-        {"name": "1600x707_Focus_Gauche", "size": (1600, 707), "focus": "left"},
-        {"name": "400x400_Carre", "size": (400, 400), "focus": "center"},
-        {"name": "620x436_Standard", "size": (620, 436), "focus": "center"},
-    ]
-
-    try:
-        img = Image.open(input_path)
-        img_w, img_h = img.size
-        
-        for fmt in formats:
-            target_w, target_h = fmt["size"]
-            target_ratio = target_w / target_h
-            img_ratio = img_w / img_h
-
-            if img_ratio > target_ratio:
-                # Image plus large que la cible
-                new_w = int(img_h * target_ratio)
-                new_h = img_h
-                if fmt["focus"] == "center":
-                    left = (img_w - new_w) // 2
-                else: # focus left
-                    left = 0
-                top = 0
-                right = left + new_w
-                bottom = img_h
-            else:
-                # Image plus haute que la cible
-                new_w = img_w
-                new_h = int(img_w / target_ratio)
-                left = 0
-                top = (img_h - new_h) // 2
-                right = img_w
-                bottom = top + new_h
-
-            # Crop and Resize
-            cropped_img = img.crop((left, top, right, bottom))
-            resized_img = cropped_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
-            
-            output_name = f"{fmt['name']}.jpg"
-            resized_img.save(os.path.join(output_folder, output_name), "JPEG", quality=90)
-            print(f"Généré : {output_name}")
-
-        print("\\nTraitement terminé avec succès !")
-        
-    except Exception as e:
-        print(f"Erreur lors du traitement : {e}")
-
-if __name__ == "__main__":
-    # Remplacez par le chemin de votre image
-    resize_master("${originalFileName}")
-`;
 };
