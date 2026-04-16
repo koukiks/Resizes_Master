@@ -87,6 +87,10 @@ export const resizeImage = (
         }
 
         sourceY = (format.customOffset.y / format.customScale) * (imgWidth / targetRatio);
+
+        // Final safety clamp
+        sourceX = Math.max(0, Math.min(imgWidth - sourceWidth, sourceX));
+        sourceY = Math.max(0, Math.min(imgHeight - sourceHeight, sourceY));
       } else {
         // Standard Crop Logic
         if (imgRatio > targetRatio) {

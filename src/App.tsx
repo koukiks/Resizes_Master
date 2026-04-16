@@ -34,6 +34,8 @@ export default function App() {
   const [masterDimensions, setMasterDimensions] = useState({ width: 0, height: 0 });
   const [draggingFormatId, setDraggingFormatId] = useState<string | null>(null);
   const [previewDragStart, setPreviewDragStart] = useState({ x: 0, y: 0 });
+  const [draggedRect, setDraggedRect] = useState<DOMRect | null>(null);
+  const lastUpdateRef = useRef<number>(0);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const masterContainerRef = useRef<HTMLDivElement>(null);
@@ -65,8 +67,9 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  const generateResizedVersions = async (imageSrc: string, area = selectionArea, currentFormats = formats) => {
-    setIsProcessing(true);
+  const generateResizedVersions = async (imageSrc: string, area = selectionArea, currentFormats = formats, singleFormatId?: string) => {
+    if (!singleFormatId) setIsProcessing(true);
+    
     const img = new Image();
     img.src = imageSrc;
     
@@ -75,13 +78,17 @@ export default function App() {
     });
 
     const results: Record<string, string> = { ...resizedImages };
-    for (const format of currentFormats) {
+    const formatsToProcess = singleFormatId 
+      ? currentFormats.filter(f => f.id === singleFormatId)
+      : currentFormats;
+
+    for (const format of formatsToProcess) {
       const resized = await resizeImage(img, format, area);
       results[format.id] = resized;
     }
     
     setResizedImages(results);
-    setIsProcessing(false);
+    if (!singleFormatId) setIsProcessing(false);
   };
 
   const toggleMode = (formatId: string) => {
@@ -118,10 +125,27 @@ export default function App() {
     if (!format) return;
 
     const currentValues = getInitialAdjustmentValues(format);
-    const newScale = Math.max(0.1, Math.min(5, currentValues.scale + delta));
     
+    // Calculate minimum scale to prevent white areas
+    const imgWidth = masterDimensions.width;
+    const imgHeight = masterDimensions.height;
+    const imgRatio = imgWidth / imgHeight;
+    const targetRatio = format.width / format.height;
+    const minScale = imgRatio > targetRatio ? imgRatio / targetRatio : 1;
+
+    const newScale = Math.max(minScale, Math.min(5, currentValues.scale + delta));
+    
+    // Re-clamp offset with new scale
+    const maxOffsetX = Math.max(0, newScale - 1);
+    const maxOffsetY = Math.max(0, (targetRatio / imgRatio) * newScale - 1);
+    
+    const newOffset = {
+      x: Math.max(0, Math.min(maxOffsetX, currentValues.offset.x)),
+      y: Math.max(0, Math.min(maxOffsetY, currentValues.offset.y))
+    };
+
     const newFormats = formats.map(f => 
-      f.id === formatId ? { ...f, customOffset: currentValues.offset, customScale: newScale } : f
+      f.id === formatId ? { ...f, customOffset: newOffset, customScale: newScale } : f
     );
     setFormats(newFormats);
     
@@ -134,40 +158,56 @@ export default function App() {
     e.stopPropagation();
     setDraggingFormatId(formatId);
     setPreviewDragStart({ x: e.clientX, y: e.clientY });
+    setDraggedRect(e.currentTarget.getBoundingClientRect());
   };
 
   const handlePreviewMouseMove = (e: React.MouseEvent) => {
-    if (!draggingFormatId || !masterImage) return;
+    if (!draggingFormatId || !masterImage || !draggedRect) return;
+
+    // Throttle updates to ~60fps
+    const now = Date.now();
+    if (now - lastUpdateRef.current < 16) return;
+    lastUpdateRef.current = now;
 
     const format = formats.find(f => f.id === draggingFormatId);
     if (!format) return;
 
     const currentValues = getInitialAdjustmentValues(format);
     
-    // We need to know the preview container size to calculate delta in coordinate space
-    const target = e.currentTarget as HTMLElement;
-    const rect = target.getBoundingClientRect();
-    
-    const dx = (e.clientX - previewDragStart.x) / rect.width;
-    const dy = (e.clientY - previewDragStart.y) / rect.height;
+    // Use the stored rect of the specific preview container
+    const dx = (e.clientX - previewDragStart.x) / draggedRect.width;
+    const dy = (e.clientY - previewDragStart.y) / draggedRect.height;
 
-    const newOffset = {
-      x: currentValues.offset.x - dx,
-      y: currentValues.offset.y - dy
-    };
+    const imgWidth = masterDimensions.width;
+    const imgHeight = masterDimensions.height;
+    const imgRatio = imgWidth / imgHeight;
+    const targetRatio = format.width / format.height;
+
+    let newOffsetX = currentValues.offset.x - dx;
+    let newOffsetY = currentValues.offset.y - dy;
+
+    const maxOffsetX = Math.max(0, currentValues.scale - 1);
+    const maxOffsetY = Math.max(0, (targetRatio / imgRatio) * currentValues.scale - 1);
+
+    newOffsetX = Math.max(0, Math.min(maxOffsetX, newOffsetX));
+    newOffsetY = Math.max(0, Math.min(maxOffsetY, newOffsetY));
+
+    const newOffset = { x: newOffsetX, y: newOffsetY };
 
     const newFormats = formats.map(f => 
       f.id === draggingFormatId ? { ...f, customOffset: newOffset, customScale: currentValues.scale } : f
     );
+    
     setFormats(newFormats);
     setPreviewDragStart({ x: e.clientX, y: e.clientY });
 
-    // Debounce or just update? Let's try direct update for responsiveness
-    generateResizedVersions(masterImage, selectionArea, newFormats);
+    // Only update the specific format being dragged for maximum fluidity
+    generateResizedVersions(masterImage, selectionArea, newFormats, draggingFormatId);
   };
 
   const handlePreviewMouseUp = () => {
     setDraggingFormatId(null);
+    setDraggedRect(null);
   };
 
   const getInitialAdjustmentValues = (format: ResizeFormat) => {
