@@ -70,6 +70,16 @@ export const RESIZE_FORMATS: ResizeFormat[] = [
     focus: 'center',
     description: 'Square format ideal for social media or thumbnails.',
     mode: 'crop',
+    overlay: {
+      type: 'custom',
+      style: {
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: '30%',
+        backgroundColor: 'rgba(239, 68, 68, 0.3)'
+      }
+    }
   },
   {
     id: 'standard',
@@ -85,7 +95,7 @@ export const RESIZE_FORMATS: ResizeFormat[] = [
         bottom: 0,
         left: 0,
         right: 0,
-        height: 'calc(66% - 40px)',
+        height: 'calc(66% - 60px)',
         backgroundColor: 'rgba(239, 68, 68, 0.3)'
       }
     }

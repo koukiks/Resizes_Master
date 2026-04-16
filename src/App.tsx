@@ -13,11 +13,14 @@ import {
   Layout,
   ChevronRight,
   FlipHorizontal,
-  Move
+  Move,
+  ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { RESIZE_FORMATS, ResizeFormat, SelectionArea } from './types';
 import { resizeImage } from './utils/imageProcessing';
+import { trackEvent, db } from './firebase';
+import { onSnapshot, doc } from 'firebase/firestore';
 
 export default function App() {
   const [masterImage, setMasterImage] = useState<string | null>(null);
@@ -35,10 +38,39 @@ export default function App() {
   const [previewDragStart, setPreviewDragStart] = useState({ x: 0, y: 0 });
   const [draggedRect, setDraggedRect] = useState<DOMRect | null>(null);
   const lastUpdateRef = useRef<number>(0);
+  const masterImageElementRef = useRef<HTMLImageElement | null>(null);
   
+  // Admin State
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [adminStats, setAdminStats] = useState<{ total_exports: number, total_request_clicks: number } | null>(null);
+  const logoClickCount = useRef(0);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const masterContainerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+
+  // Subscribe to stats if admin is open
+  React.useEffect(() => {
+    if (!isAdminOpen) return;
+    const unsub = onSnapshot(doc(db, 'system', 'stats'), (snapshot) => {
+      if (snapshot.exists()) {
+        setAdminStats(snapshot.data() as any);
+      }
+    });
+    return () => unsub();
+  }, [isAdminOpen]);
+
+  const handleLogoClick = () => {
+    logoClickCount.current += 1;
+    if (logoClickCount.current >= 5) {
+      setIsAdminOpen(true);
+      logoClickCount.current = 0;
+    }
+    // Reset click count after 3 seconds of inactivity
+    setTimeout(() => {
+      logoClickCount.current = 0;
+    }, 3000);
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -47,7 +79,7 @@ export default function App() {
     }
   };
 
-  const processFile = (file: File) => {
+  const processFile = useCallback((file: File) => {
     setOriginalFile(file);
     setCustomBaseName(file.name.split('.')[0]);
     const reader = new FileReader();
@@ -57,41 +89,57 @@ export default function App() {
       
       const img = new Image();
       img.onload = () => {
+        masterImageElementRef.current = img;
         setMasterDimensions({ width: img.width, height: img.height });
         const initialSelection = { x: 0.4, y: 0.4, width: 0.2, height: 0.2 };
         setSelectionArea(initialSelection);
-        generateResizedVersions(result, initialSelection, formats);
+        generateResizedVersions(result, initialSelection, formats, undefined, img);
       };
       img.src = result;
     };
     reader.readAsDataURL(file);
-  };
+  }, [formats]);
 
-  const generateResizedVersions = async (imageSrc: string, area = selectionArea, currentFormats = formats, singleFormatId?: string) => {
+  const generateResizedVersions = useCallback(async (
+    imageSrc: string, 
+    area = selectionArea, 
+    currentFormats = formats, 
+    singleFormatId?: string,
+    preloadedImage?: HTMLImageElement
+  ) => {
     if (!singleFormatId) setIsProcessing(true);
     
-    const img = new Image();
-    img.src = imageSrc;
+    let img = preloadedImage || masterImageElementRef.current;
     
-    await new Promise((resolve) => {
-      img.onload = resolve;
-    });
+    if (!img) {
+      img = new Image();
+      img.src = imageSrc;
+      await new Promise((resolve) => {
+        img!.onload = resolve;
+      });
+      masterImageElementRef.current = img;
+    }
 
     const results: Record<string, string> = { ...resizedImages };
     const formatsToProcess = singleFormatId 
       ? currentFormats.filter(f => f.id === singleFormatId)
       : currentFormats;
 
-    for (const format of formatsToProcess) {
-      const resized = await resizeImage(img, format, area);
-      results[format.id] = resized;
-    }
+    const generationTasks = formatsToProcess.map(async (format) => {
+      const dataUrl = await resizeImage(img!, format, area);
+      return { id: format.id, dataUrl };
+    });
+
+    const taskResults = await Promise.all(generationTasks);
+    taskResults.forEach(({ id, dataUrl }) => {
+      results[id] = dataUrl;
+    });
     
     setResizedImages(results);
     if (!singleFormatId) setIsProcessing(false);
-  };
+  }, [selectionArea, formats, resizedImages]);
 
-  const toggleMirror = (formatId: string) => {
+  const toggleMirror = useCallback((formatId: string) => {
     const newFormats = formats.map(f => 
       f.id === formatId ? { ...f, mirror: !f.mirror } : f
     );
@@ -100,99 +148,9 @@ export default function App() {
     if (masterImage) {
       generateResizedVersions(masterImage, selectionArea, newFormats);
     }
-  };
+  }, [formats, masterImage, selectionArea, generateResizedVersions]);
 
-  const handleZoom = (formatId: string, delta: number) => {
-    const format = formats.find(f => f.id === formatId);
-    if (!format) return;
-
-    const currentValues = getInitialAdjustmentValues(format);
-    
-    // Calculate minimum scale to prevent white areas
-    const imgWidth = masterDimensions.width;
-    const imgHeight = masterDimensions.height;
-    const imgRatio = imgWidth / imgHeight;
-    const targetRatio = format.width / format.height;
-    const minScale = imgRatio > targetRatio ? imgRatio / targetRatio : 1;
-
-    const newScale = Math.max(minScale, Math.min(5, currentValues.scale + delta));
-    
-    // Re-clamp offset with new scale
-    const maxOffsetX = Math.max(0, newScale - 1);
-    const maxOffsetY = Math.max(0, (targetRatio / imgRatio) * newScale - 1);
-    
-    const newOffset = {
-      x: Math.max(0, Math.min(maxOffsetX, currentValues.offset.x)),
-      y: Math.max(0, Math.min(maxOffsetY, currentValues.offset.y))
-    };
-
-    const newFormats = formats.map(f => 
-      f.id === formatId ? { ...f, customOffset: newOffset, customScale: newScale } : f
-    );
-    setFormats(newFormats);
-    
-    if (masterImage) {
-      generateResizedVersions(masterImage, selectionArea, newFormats);
-    }
-  };
-
-  const handlePreviewMouseDown = (e: React.MouseEvent, formatId: string) => {
-    e.stopPropagation();
-    setDraggingFormatId(formatId);
-    setPreviewDragStart({ x: e.clientX, y: e.clientY });
-    setDraggedRect(e.currentTarget.getBoundingClientRect());
-  };
-
-  const handlePreviewMouseMove = (e: React.MouseEvent) => {
-    if (!draggingFormatId || !masterImage || !draggedRect) return;
-
-    // Throttle updates to ~60fps
-    const now = Date.now();
-    if (now - lastUpdateRef.current < 16) return;
-    lastUpdateRef.current = now;
-
-    const format = formats.find(f => f.id === draggingFormatId);
-    if (!format) return;
-
-    const currentValues = getInitialAdjustmentValues(format);
-    
-    // Use the stored rect of the specific preview container
-    const dx = (e.clientX - previewDragStart.x) / draggedRect.width;
-    const dy = (e.clientY - previewDragStart.y) / draggedRect.height;
-
-    const imgWidth = masterDimensions.width;
-    const imgHeight = masterDimensions.height;
-    const imgRatio = imgWidth / imgHeight;
-    const targetRatio = format.width / format.height;
-
-    let newOffsetX = currentValues.offset.x - dx;
-    let newOffsetY = currentValues.offset.y - dy;
-
-    const maxOffsetX = Math.max(0, currentValues.scale - 1);
-    const maxOffsetY = Math.max(0, (targetRatio / imgRatio) * currentValues.scale - 1);
-
-    newOffsetX = Math.max(0, Math.min(maxOffsetX, newOffsetX));
-    newOffsetY = Math.max(0, Math.min(maxOffsetY, newOffsetY));
-
-    const newOffset = { x: newOffsetX, y: newOffsetY };
-
-    const newFormats = formats.map(f => 
-      f.id === draggingFormatId ? { ...f, customOffset: newOffset, customScale: currentValues.scale } : f
-    );
-    
-    setFormats(newFormats);
-    setPreviewDragStart({ x: e.clientX, y: e.clientY });
-
-    // Only update the specific format being dragged for maximum fluidity
-    generateResizedVersions(masterImage, selectionArea, newFormats, draggingFormatId);
-  };
-
-  const handlePreviewMouseUp = () => {
-    setDraggingFormatId(null);
-    setDraggedRect(null);
-  };
-
-  const getInitialAdjustmentValues = (format: ResizeFormat) => {
+  const getInitialAdjustmentValues = useCallback((format: ResizeFormat) => {
     if (format.customOffset && format.customScale) {
       return { offset: format.customOffset, scale: format.customScale };
     }
@@ -242,9 +200,100 @@ export default function App() {
     }
 
     return { offset, scale };
-  };
+  }, [masterImage, masterDimensions, selectionArea, formats]);
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleZoom = useCallback((formatId: string, delta: number) => {
+    const format = formats.find(f => f.id === formatId);
+    if (!format) return;
+
+    const currentValues = getInitialAdjustmentValues(format);
+    
+    // Calculate minimum scale to prevent white areas
+    const imgWidth = masterDimensions.width;
+    const imgHeight = masterDimensions.height;
+    const imgRatio = imgWidth / imgHeight;
+    const targetRatio = format.width / format.height;
+    const minScale = imgRatio > targetRatio ? imgRatio / targetRatio : 1;
+
+    const newScale = Math.max(minScale, Math.min(10, currentValues.scale + delta));
+    
+    // Clamp offsets
+    const maxOffsetX = Math.max(0, newScale - 1);
+    const maxOffsetY = Math.max(0, (newScale * targetRatio / imgRatio) - 1);
+    
+    const newOffset = {
+      x: Math.max(0, Math.min(maxOffsetX, currentValues.offset.x)),
+      y: Math.max(0, Math.min(maxOffsetY, currentValues.offset.y))
+    };
+
+    const newFormats = formats.map(f => 
+      f.id === formatId ? { ...f, customOffset: newOffset, customScale: newScale } : f
+    );
+    setFormats(newFormats);
+    
+    if (masterImage) {
+      generateResizedVersions(masterImage, selectionArea, newFormats);
+    }
+  }, [formats, getInitialAdjustmentValues, masterDimensions, masterImage, selectionArea, generateResizedVersions]);
+
+  const handlePreviewMouseDown = useCallback((e: React.MouseEvent, formatId: string) => {
+    e.stopPropagation();
+    setDraggingFormatId(formatId);
+    setPreviewDragStart({ x: e.clientX, y: e.clientY });
+    setDraggedRect(e.currentTarget.getBoundingClientRect());
+  }, []);
+
+  const handlePreviewMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!draggingFormatId || !masterImage || !draggedRect) return;
+
+    // Throttle updates to ~60fps
+    const now = Date.now();
+    if (now - lastUpdateRef.current < 16) return;
+    lastUpdateRef.current = now;
+
+    const format = formats.find(f => f.id === draggingFormatId);
+    if (!format) return;
+
+    const currentValues = getInitialAdjustmentValues(format);
+    
+    // Use the stored rect of the specific preview container
+    const dx = (e.clientX - previewDragStart.x) / draggedRect.width;
+    const dy = (e.clientY - previewDragStart.y) / draggedRect.height;
+
+    const imgWidth = masterDimensions.width;
+    const imgHeight = masterDimensions.height;
+    const imgRatio = imgWidth / imgHeight;
+    const targetRatio = format.width / format.height;
+
+    let newOffsetX = currentValues.offset.x - dx;
+    let newOffsetY = currentValues.offset.y - dy;
+
+    // Clamp offsets
+    const maxOffsetX = Math.max(0, currentValues.scale - 1);
+    const maxOffsetY = Math.max(0, (currentValues.scale * targetRatio / imgRatio) - 1);
+
+    const newOffset = { 
+      x: Math.max(0, Math.min(maxOffsetX, newOffsetX)), 
+      y: Math.max(0, Math.min(maxOffsetY, newOffsetY)) 
+    };
+
+    const newFormats = formats.map(f => 
+      f.id === draggingFormatId ? { ...f, customOffset: newOffset, customScale: currentValues.scale } : f
+    );
+    
+    setFormats(newFormats);
+    setPreviewDragStart({ x: e.clientX, y: e.clientY });
+
+    // Only update the specific format being dragged for maximum fluidity
+    generateResizedVersions(masterImage, selectionArea, newFormats, draggingFormatId);
+  }, [draggingFormatId, masterImage, draggedRect, formats, getInitialAdjustmentValues, previewDragStart, masterDimensions, selectionArea, generateResizedVersions]);
+
+  const handlePreviewMouseUp = useCallback(() => {
+    setDraggingFormatId(null);
+    setDraggedRect(null);
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!masterContainerRef.current || !masterImage) return;
     
     const rect = masterContainerRef.current.getBoundingClientRect();
@@ -254,9 +303,9 @@ export default function App() {
     setIsDragging(true);
     setDragStart({ x, y });
     setSelectionArea({ x, y, width: 0, height: 0 });
-  };
+  }, [masterImage]);
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!isDragging || !masterContainerRef.current) return;
     
     const rect = masterContainerRef.current.getBoundingClientRect();
@@ -274,18 +323,18 @@ export default function App() {
       width: Math.min(1 - x, width), 
       height: Math.min(1 - y, height) 
     });
-  };
+  }, [isDragging, dragStart]);
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     if (isDragging) {
       setIsDragging(false);
       if (masterImage) {
         generateResizedVersions(masterImage, selectionArea);
       }
     }
-  };
+  }, [isDragging, masterImage, selectionArea, generateResizedVersions]);
 
-  const getCropRect = (format: ResizeFormat) => {
+  const getCropRect = useCallback((format: ResizeFormat) => {
     if (!imageRef.current) return null;
     
     const imgW = imageRef.current.naturalWidth;
@@ -319,9 +368,10 @@ export default function App() {
     }
 
     return { top: `${y}%`, left: `${x}%`, width: `${w}%`, height: `${h}%` };
-  };
+  }, [selectionArea]);
 
-  const downloadAll = async () => {
+  const downloadAll = useCallback(async () => {
+    trackEvent('export');
     Object.entries(resizedImages).forEach(([id, dataUrl]) => {
       const format = RESIZE_FORMATS.find(f => f.id === id);
       if (format && typeof dataUrl === 'string') {
@@ -336,54 +386,63 @@ export default function App() {
         document.body.removeChild(link);
       }
     });
-  };
+  }, [resizedImages, customBaseName, originalFile]);
 
-  const onDrop = (e: React.DragEvent) => {
+  const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
     if (file && file.type.startsWith('image/')) {
       processFile(file);
     }
-  };
+  }, [processFile]);
 
   return (
     <div className="min-h-screen flex flex-col bg-bento-bg">
       {/* Header */}
-      <header className="h-16 px-6 flex items-center justify-between border-b border-bento-border bg-bento-card">
-        <div className="flex items-center gap-3">
+      <header className="h-16 px-6 flex items-center border-b border-bento-border bg-bento-card relative">
+        <div className="flex items-center gap-3 cursor-pointer select-none" onClick={handleLogoClick}>
           <div className="w-6 h-6 bg-bento-accent rounded-md flex items-center justify-center shadow-lg shadow-bento-accent/20">
             <Layers className="text-white w-4 h-4" />
           </div>
           <h1 className="font-bold text-lg tracking-tight">Master Resizer <span className="font-light opacity-50">v2.4.0</span></h1>
         </div>
-        
-        <div className="flex items-center gap-4">
-          <span className="text-[10px] uppercase tracking-widest text-bento-dim font-bold">Status: {masterImage ? 'Ready' : 'Waiting'}</span>
-          {masterImage && (
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="bento-btn-outline flex items-center gap-2"
+
+        {/* Centered Request Link - Appears only when masterImage is loaded */}
+        {masterImage && (
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <a 
+              href="https://pvcpgroup.atlassian.net/jira/core/projects/ST/form/3?atlOrigin=eyJpIjoiYzYwZGM3OWUyMjljNDhhNGI5M2ZhOGMyZTJmYTYwYzkiLCJwIjoiaiJ9" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              onClick={() => trackEvent('request_click')}
+              className="bento-btn flex items-center gap-2 whitespace-nowrap shadow-lg shadow-bento-accent/10"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              Change
-            </button>
-          )}
-          <button 
-            onClick={masterImage ? downloadAll : () => fileInputRef.current?.click()}
-            className="bento-btn flex items-center gap-2"
-          >
-            {masterImage ? (
-              <>
+              <ExternalLink className="w-3.5 h-3.5" />
+              Click here to fill a Studio Request for any problem
+            </a>
+          </div>
+        )}
+
+        <div className="ml-auto flex items-center gap-4">
+          {masterImage && (
+            <>
+              <span className="text-[10px] uppercase tracking-widest text-bento-dim font-bold">Status: Ready</span>
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="bento-btn-outline flex items-center gap-2"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Change
+              </button>
+              <button 
+                onClick={downloadAll}
+                className="bento-btn flex items-center gap-2"
+              >
                 <Download className="w-3.5 h-3.5" />
                 Export All
-              </>
-            ) : (
-              <>
-                <Upload className="w-3.5 h-3.5" />
-                Import Master
-              </>
-            )}
-          </button>
+              </button>
+            </>
+          )}
         </div>
       </header>
 
@@ -415,7 +474,7 @@ export default function App() {
             <section className="bento-card" style={{ gridArea: '1 / 1 / 11 / 8' }}>
               <div className="bento-card-header flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] uppercase tracking-widest text-bento-dim font-bold">Source :</span>
+                  <span className="text-[10px] uppercase tracking-widest text-bento-dim font-bold">Visual Name :</span>
                   <input 
                     type="text" 
                     value={customBaseName}
@@ -514,7 +573,11 @@ export default function App() {
                     <div 
                       onMouseDown={(e) => handlePreviewMouseDown(e, format.id)}
                       className={`w-full bg-black/40 rounded border border-bento-border overflow-hidden flex items-center justify-center shrink-0 relative transition-colors group/preview ${draggingFormatId === format.id ? 'cursor-grabbing border-bento-accent' : 'cursor-grab hover:border-bento-accent'}`}
-                      style={{ aspectRatio: `${format.width} / ${format.height}` }}
+                      style={{ 
+                        aspectRatio: `${format.width} / ${format.height}`,
+                        maxWidth: format.id === 'square' ? '180px' : 'none',
+                        margin: format.id === 'square' ? '0 auto' : '0'
+                      }}
                     >
                       {resizedImages[format.id] ? (
                         <img src={resizedImages[format.id]} alt={format.name} className="w-full h-full object-cover pointer-events-none" />
@@ -602,6 +665,63 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Admin Panel Overlay */}
+      <AnimatePresence>
+        {isAdminOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-6"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bento-card max-w-md w-full p-6 space-y-6"
+            >
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-bold flex items-center gap-2">
+                  <Monitor className="w-5 h-5 text-bento-accent" />
+                  Admin Dashboard
+                </h3>
+                <button 
+                  onClick={() => setIsAdminOpen(false)}
+                  className="p-1 hover:bg-white/10 rounded-md transition-colors"
+                >
+                  <RefreshCw className="w-4 h-4 text-bento-dim" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-bento-bg p-4 rounded-xl border border-bento-border text-center">
+                  <div className="text-2xl font-bold text-bento-accent">
+                    {adminStats?.total_exports || 0}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-widest text-bento-dim font-bold mt-1">
+                    Total Exports
+                  </div>
+                </div>
+                <div className="bg-bento-bg p-4 rounded-xl border border-bento-border text-center">
+                  <div className="text-2xl font-bold text-bento-accent">
+                    {adminStats?.total_request_clicks || 0}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-widest text-bento-dim font-bold mt-1">
+                    Studio Requests
+                  </div>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setIsAdminOpen(false)}
+                className="bento-btn w-full"
+              >
+                Close Dashboard
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <input 
         type="file" 

@@ -1,0 +1,30 @@
+{
+  "entities": {
+    "SystemStats": {
+      "title": "System Statistics",
+      "description": "Global counters for app usage tracking",
+      "type": "object",
+      "properties": {
+        "total_exports": {
+          "type": "number",
+          "description": "Total number of image exports across all users"
+        },
+        "total_request_clicks": {
+          "type": "number",
+          "description": "Total number of clicks on the Studio Request button"
+        },
+        "last_updated": {
+          "type": "object",
+          "description": "Timestamp of the last update"
+        }
+      },
+      "required": ["total_exports", "total_request_clicks", "last_updated"]
+    }
+  },
+  "firestore": {
+    "/system/stats": {
+      "schema": "SystemStats",
+      "description": "Global statistics document"
+    }
+  }
+}

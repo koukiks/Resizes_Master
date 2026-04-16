@@ -1,0 +1,53 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: system
+    // Document ID: stats
+    // Fields:
+    //   - total_exports: number (required) - Cumulative count of exports
+    //   - total_request_clicks: number (required) - Cumulative count of request button clicks
+    //   - last_updated: timestamp (required) - Time of last event
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             (request.auth.token.email == "koukiks@gmail.com" && request.auth.token.email_verified == true);
+    }
+
+    function isValidStatsUpdate() {
+      let allowedFields = ['total_exports', 'total_request_clicks', 'last_updated'];
+      let data = request.resource.data;
+      
+      return data.keys().hasOnly(allowedFields) &&
+             data.total_exports is number && data.total_exports >= 0 &&
+             data.total_request_clicks is number && data.total_request_clicks >= 0 &&
+             data.last_updated is timestamp;
+    }
+
+    // System stats rules
+    match /system/stats {
+      // Allow any authenticated user to increment stats via transaction/update
+      // We allow anonymous or authenticated read/write for this specific "public" counter app
+      // But we protect the structure
+      allow read: if true; 
+      allow create, update: if isValidStatsUpdate();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
