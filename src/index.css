@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-bento-bg: #0A0A0C;
+  --color-bento-card: #141417;
+  --color-bento-border: #2D2D33;
+  --color-bento-accent: #4F46E5;
+  --color-bento-accent-soft: rgba(79, 70, 229, 0.1);
+  --color-bento-text: #E4E4E7;
+  --color-bento-dim: #A1A1AA;
+  --color-bento-code: #1E1E22;
+}
+
+@layer base {
+  body {
+    @apply bg-bento-bg text-bento-text font-sans antialiased;
+  }
+}
+
+.bento-grid-container {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-template-rows: repeat(10, 1fr);
+  gap: 16px;
+  padding: 16px;
+  height: calc(100vh - 64px);
+}
+
+.bento-card {
+  @apply bg-bento-card border border-bento-border rounded-xl overflow-hidden flex flex-col;
+}
+
+.bento-card-header {
+  @apply px-4 py-3 border-b border-bento-border flex justify-between items-center;
+}
+
+.bento-card-title {
+  @apply text-[10px] font-bold uppercase tracking-widest text-bento-dim;
+}
+
+.bento-badge {
+  @apply px-2 py-0.5 rounded bg-bento-accent-soft text-bento-accent text-[10px] font-semibold;
+}
+
+.bento-btn {
+  @apply bg-bento-accent text-white px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-50;
+}
+
+.bento-btn-outline {
+  @apply border border-bento-accent text-bento-accent px-4 py-2 rounded-lg text-xs font-semibold hover:bg-bento-accent-soft transition-colors;
+}
+

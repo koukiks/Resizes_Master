@@ -1,0 +1,6 @@
+{
+  "name": "Master Resizer Studio",
+  "description": "Outil professionnel de redimensionnement d'images pour le web avec génération de script Python (Pillow).",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
