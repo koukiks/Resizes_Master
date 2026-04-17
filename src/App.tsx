@@ -19,7 +19,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { RESIZE_FORMATS, ResizeFormat, SelectionArea } from './types';
 import { resizeImage } from './utils/imageProcessing';
-import { trackEvent, db } from './firebase';
+import { trackEvent, db, handleFirestoreError, OperationType } from './firebase';
 import { onSnapshot, doc } from 'firebase/firestore';
 
 export default function App() {
@@ -42,7 +42,7 @@ export default function App() {
   
   // Admin State
   const [isAdminOpen, setIsAdminOpen] = useState(false);
-  const [adminStats, setAdminStats] = useState<{ total_exports: number, total_request_clicks: number } | null>(null);
+  const [adminStats, setAdminStats] = useState<{ total_exports: number, total_request_clicks: number, last_updated?: any } | null>(null);
   const logoClickCount = useRef(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -52,11 +52,17 @@ export default function App() {
   // Subscribe to stats if admin is open
   React.useEffect(() => {
     if (!isAdminOpen) return;
-    const unsub = onSnapshot(doc(db, 'system', 'stats'), (snapshot) => {
-      if (snapshot.exists()) {
-        setAdminStats(snapshot.data() as any);
+    const unsub = onSnapshot(
+      doc(db, 'system', 'stats'), 
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setAdminStats(snapshot.data() as any);
+        }
+      },
+      (error) => {
+        handleFirestoreError(error, OperationType.GET, 'system/stats');
       }
-    });
+    );
     return () => unsub();
   }, [isAdminOpen]);
 
@@ -686,12 +692,25 @@ export default function App() {
                   <Monitor className="w-5 h-5 text-bento-accent" />
                   Admin Dashboard
                 </h3>
-                <button 
-                  onClick={() => setIsAdminOpen(false)}
-                  className="p-1 hover:bg-white/10 rounded-md transition-colors"
-                >
-                  <RefreshCw className="w-4 h-4 text-bento-dim" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => {
+                      // Manual trigger to refresh by toggle
+                      setIsAdminOpen(false);
+                      setTimeout(() => setIsAdminOpen(true), 10);
+                    }}
+                    className="p-1 hover:bg-white/10 rounded-md transition-colors group"
+                    title="Force Refresh"
+                  >
+                    <RefreshCw className="w-4 h-4 text-bento-dim group-active:rotate-180 transition-transform duration-500" />
+                  </button>
+                  <button 
+                    onClick={() => setIsAdminOpen(false)}
+                    className="p-2 hover:bg-white/10 rounded-md transition-colors text-bento-dim hover:text-white"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -712,6 +731,14 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {adminStats?.last_updated && (
+                <div className="text-center">
+                  <span className="text-[9px] text-bento-dim uppercase tracking-tighter">
+                    Sync Live — Last data: {new Date(adminStats.last_updated.seconds * 1000).toLocaleTimeString()}
+                  </span>
+                </div>
+              )}
 
               <button 
                 onClick={() => setIsAdminOpen(false)}

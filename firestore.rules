@@ -27,13 +27,11 @@ service cloud.firestore {
     }
 
     function isValidStatsUpdate() {
-      let allowedFields = ['total_exports', 'total_request_clicks', 'last_updated'];
       let data = request.resource.data;
       
-      return data.keys().hasOnly(allowedFields) &&
-             data.total_exports is number && data.total_exports >= 0 &&
-             data.total_request_clicks is number && data.total_request_clicks >= 0 &&
-             data.last_updated is timestamp;
+      return ('total_exports' in data && data.total_exports is number && data.total_exports >= 0) &&
+             ('total_request_clicks' in data && data.total_request_clicks is number && data.total_request_clicks >= 0) &&
+             ('last_updated' in data && data.last_updated is timestamp);
     }
 
     // System stats rules
