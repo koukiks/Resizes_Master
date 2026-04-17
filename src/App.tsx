@@ -371,7 +371,7 @@ export default function App() {
   }, [selectionArea]);
 
   const downloadAll = useCallback(async () => {
-    trackEvent('export');
+    trackEvent('export', 5);
     Object.entries(resizedImages).forEach(([id, dataUrl]) => {
       const format = RESIZE_FORMATS.find(f => f.id === id);
       if (format && typeof dataUrl === 'string') {
@@ -643,6 +643,7 @@ export default function App() {
                     <a 
                       href={resizedImages[format.id]} 
                       download={`${format.width}x${format.height}_${(customBaseName || (originalFile ? originalFile.name.split('.')[0] : 'image')).replace(/\s+/g, '')}${format.focus === 'left' ? '_left' : ''}.jpg`}
+                      onClick={() => trackEvent('export', 1)}
                       className="p-1.5 rounded-md hover:bg-bento-accent/10 text-bento-dim hover:text-bento-accent transition-all opacity-0 group-hover:opacity-100 flex items-center gap-2 text-[10px] font-bold"
                     >
                       <Download className="w-3.5 h-3.5" />

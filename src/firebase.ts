@@ -10,21 +10,21 @@ export const auth = getAuth();
 /**
  * Global tracking for app statistics
  */
-export const trackEvent = async (event: 'export' | 'request_click') => {
+export const trackEvent = async (event: 'export' | 'request_click', amount: number = 1) => {
   try {
     const statsRef = doc(db, 'system', 'stats');
     await runTransaction(db, async (transaction) => {
       const statsDoc = await transaction.get(statsRef);
       if (!statsDoc.exists()) {
         transaction.set(statsRef, {
-          total_exports: event === 'export' ? 1 : 0,
-          total_request_clicks: event === 'request_click' ? 1 : 0,
+          total_exports: event === 'export' ? amount : 0,
+          total_request_clicks: event === 'request_click' ? amount : 0,
           last_updated: Timestamp.now()
         });
       } else {
         const data = statsDoc.data();
         transaction.update(statsRef, {
-          [event === 'export' ? 'total_exports' : 'total_request_clicks']: (data[event === 'export' ? 'total_exports' : 'total_request_clicks'] || 0) + 1,
+          [event === 'export' ? 'total_exports' : 'total_request_clicks']: (data[event === 'export' ? 'total_exports' : 'total_request_clicks'] || 0) + amount,
           last_updated: Timestamp.now()
         });
       }
