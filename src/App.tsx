@@ -581,8 +581,8 @@ export default function App() {
                       className={`w-full bg-black/40 rounded border border-bento-border overflow-hidden flex items-center justify-center shrink-0 relative transition-colors group/preview ${draggingFormatId === format.id ? 'cursor-grabbing border-bento-accent' : 'cursor-grab hover:border-bento-accent'}`}
                       style={{ 
                         aspectRatio: `${format.width} / ${format.height}`,
-                        maxWidth: format.id === 'square' ? '180px' : 'none',
-                        margin: format.id === 'square' ? '0 auto' : '0'
+                        maxWidth: format.width === format.height ? '180px' : 'none',
+                        margin: format.width === format.height ? '0 auto' : '0'
                       }}
                     >
                       {resizedImages[format.id] ? (

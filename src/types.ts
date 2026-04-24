@@ -100,4 +100,22 @@ export const RESIZE_FORMATS: ResizeFormat[] = [
       }
     }
   },
+  {
+    id: 'banner-530',
+    name: 'Wide Header',
+    width: 1920,
+    height: 530,
+    focus: 'center',
+    description: 'Extended panoramic format for website headers.',
+    mode: 'crop',
+  },
+  {
+    id: 'square-600',
+    name: 'Large Square',
+    width: 600,
+    height: 600,
+    focus: 'center',
+    description: 'Large square format for multi-purpose use.',
+    mode: 'crop',
+  },
 ];
