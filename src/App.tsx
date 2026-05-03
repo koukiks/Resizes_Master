@@ -43,6 +43,7 @@ export default function App() {
   // Admin State
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [adminStats, setAdminStats] = useState<{ total_exports: number, total_request_clicks: number, last_updated?: any } | null>(null);
+  const logoClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const logoClickCount = useRef(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -66,17 +67,20 @@ export default function App() {
     return () => unsub();
   }, [isAdminOpen]);
 
-  const handleLogoClick = () => {
+  const handleLogoClick = useCallback(() => {
     logoClickCount.current += 1;
+    
+    if (logoClickTimeoutRef.current) clearTimeout(logoClickTimeoutRef.current);
+    
     if (logoClickCount.current >= 5) {
       setIsAdminOpen(true);
       logoClickCount.current = 0;
+    } else {
+      logoClickTimeoutRef.current = setTimeout(() => {
+        logoClickCount.current = 0;
+      }, 2000);
     }
-    // Reset click count after 3 seconds of inactivity
-    setTimeout(() => {
-      logoClickCount.current = 0;
-    }, 3000);
-  };
+  }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -137,13 +141,17 @@ export default function App() {
     });
 
     const taskResults = await Promise.all(generationTasks);
-    taskResults.forEach(({ id, dataUrl }) => {
-      results[id] = dataUrl;
+    
+    setResizedImages(prev => {
+      const newResults = { ...prev };
+      taskResults.forEach(({ id, dataUrl }) => {
+        newResults[id] = dataUrl;
+      });
+      return newResults;
     });
     
-    setResizedImages(results);
     if (!singleFormatId) setIsProcessing(false);
-  }, [selectionArea, formats, resizedImages]);
+  }, [selectionArea, formats]);
 
   const toggleMirror = useCallback((formatId: string) => {
     const newFormats = formats.map(f => 
@@ -394,8 +402,14 @@ export default function App() {
     });
   }, [resizedImages, customBaseName, originalFile]);
 
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     const file = e.dataTransfer.files?.[0];
     if (file && file.type.startsWith('image/')) {
       processFile(file);
@@ -403,7 +417,11 @@ export default function App() {
   }, [processFile]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-bento-bg">
+    <div 
+      className="min-h-screen flex flex-col bg-bento-bg"
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
       {/* Header */}
       <header className="h-16 px-6 flex items-center border-b border-bento-border bg-bento-card relative">
         <div className="flex items-center gap-3 cursor-pointer select-none" onClick={handleLogoClick}>
@@ -460,8 +478,6 @@ export default function App() {
             className="h-full flex flex-col items-center justify-center p-8"
           >
             <div 
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={onDrop}
               onClick={() => fileInputRef.current?.click()}
               className="w-full max-w-2xl aspect-video bento-card border-dashed border-2 border-bento-border hover:border-bento-accent transition-all cursor-pointer flex flex-col items-center justify-center group"
             >
