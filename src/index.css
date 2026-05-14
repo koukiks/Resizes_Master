@@ -31,7 +31,7 @@
 }
 
 .bento-card {
-  @apply bg-bento-card border border-bento-border rounded-xl overflow-hidden flex flex-col;
+  @apply bg-bento-card border border-bento-border overflow-hidden flex flex-col;
 }
 
 .bento-card-header {
@@ -43,14 +43,14 @@
 }
 
 .bento-badge {
-  @apply px-2 py-0.5 rounded bg-bento-accent-soft text-bento-accent text-[10px] font-semibold;
+  @apply px-2 py-0.5 bg-bento-accent-soft text-bento-accent text-[10px] font-semibold;
 }
 
 .bento-btn {
-  @apply bg-bento-accent text-white px-4 py-2 rounded-lg text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-50;
+  @apply bg-bento-accent text-white px-4 py-2 text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-50;
 }
 
 .bento-btn-outline {
-  @apply border border-bento-accent text-bento-accent px-4 py-2 rounded-lg text-xs font-semibold hover:bg-bento-accent-soft transition-colors;
+  @apply border border-bento-accent text-bento-accent px-4 py-2 text-xs font-semibold hover:bg-bento-accent-soft transition-colors;
 }
 
