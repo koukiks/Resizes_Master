@@ -83,6 +83,7 @@ export const resizeImage = (
       0, 0, format.width, format.height
     );
 
-    resolve(canvas.toDataURL('image/jpeg', 0.9));
+    // Optimized quality for web (balanced quality/weight)
+    resolve(canvas.toDataURL('image/jpeg', 0.8));
   });
 };
