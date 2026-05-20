@@ -118,4 +118,13 @@ export const RESIZE_FORMATS: ResizeFormat[] = [
     description: 'Large square format for multi-purpose use.',
     mode: 'crop',
   },
+  {
+    id: 'square-800',
+    name: 'Square 800x800',
+    width: 800,
+    height: 800,
+    focus: 'center',
+    description: 'Extra large high-resolution square format.',
+    mode: 'crop',
+  },
 ];
